@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+eggs/
+*.egg
+.eggs/
+*.manifest
+*.spec
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+pythonenv*
+
+# IDE и редакторы
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# Входные и выходные данные
+raw/
+extracted/
+
+# Oodle библиотека (распространяется отдельно, не храним в репозитории)
+lib/oo2core_*.dll
+
+# Логи и временные файлы
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Тестовые данные
+test_data/
+test_raw/
+test_output/
+
+# Файлы разработки
+TODO.md
+NOTES.md
+*.pkg
+
+# Конфигурация IDE
+.code-workspace
+.history/
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.pytest_cache/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pyre
+.pyre/
+
+# Extracted resources
+.bin
+
+# Профилирование
+*.prof
