@@ -24,25 +24,25 @@
 - Python 3.12
 - Windows (для Oodle DLL и vgmstream)
 
-#### Установка из репозитория
+Установка из репозитория
 
 ```bash
 git clone https://github.com/onyxfireglow/marathon-pkg-extractor.git
 cd marathon-pkg-extractor
 ```
 
-#### Создание виртуального окружения
+Создание виртуального окружения
 ```bash
 python -m venv venv
 venv\Scripts\activate  # Windows
 ```
 
-#### Установка зависимостей
+Установка зависимостей
 ```bash
 pip install -e requirements.txt
 ```
 
-#### Или установка вручную
+Или установка вручную
 ```bash
 pip install click rich tqdm requests pycryptodome
 ```
@@ -64,41 +64,41 @@ python -m src.main install
 ## Использование
 ### Основные команды
 
-#### Полный пайплайн (извлечение → анализ → конвертация)
+Полный пайплайн (извлечение → анализ → конвертация)
 ```bash
 python -m src.main process
 ```
-#### Только извлечение
+Только извлечение
 ```bash
 python -m src.main extract
 ```
-#### Анализ извлечённых файлов
+Анализ извлечённых файлов
 ```bash
 python -m src.main analyze
 ```
-#### Конвертация файлов в правильные форматы
+Конвертация файлов в правильные форматы
 ```bash
 python -m src.main convert --convert-media
 ```
-#### Проверка аудиофайлов
+Проверка аудиофайлов
 ```bash
 python -m src.main check
 ```
 ## Примеры
-#### Без конвертации
+Без конвертации
 ```bash
 python -m src.main process --no-convert-media
 ```
-#### Параллельное извлечение с 4 воркерами
+Параллельное извлечение с 4 воркерами
 ```bash
 python -m src.main extract --workers 4
 ```
-#### Анализ с подробным выводом
+Анализ с подробным выводом
 ```bash
 python -m src.main analyze --verbose
 ```
 
-#### Конвертация в тестовом режиме
+Конвертация в тестовом режиме
 ```bash
 python -m src.main convert --convert-media --dry-run
 ```
@@ -153,13 +153,13 @@ python -m src.main validate --auto-find-pkg
 ```
 
 ### Решение проблем
-#### Ошибка "Oodle DLL not found"
+Ошибка "Oodle DLL not found"
 Убедитесь, что в папке lib/ есть oo2core_9_win64.dll.
 
 ``` bash
 python -m src.main install
 ```
-#### Ошибка "No module named 'src'"
+Ошибка "No module named 'src'"
 
 Установите пакет в режиме разработки:
 
@@ -173,7 +173,7 @@ python -m src.main process
 ```
 
 
-#### Файлы не конвертируются
+Файлы не конвертируются
 
 Убедитесь, что установлены необходимые инструменты.
 
@@ -244,22 +244,22 @@ Install from repository
 git clone https://github.com/onyxfireglow/marathon-pkg-extractor.git
 cd marathon-pkg-extractor
 ```
-# Create virtual environment
+## Create virtual environment
 ```bash
 python -m venv venv
 venv\Scripts\activate  # Windows
 ```
 
-# Install dependencies
+Install dependencies
 ```bash
 pip install -e requirements.txt
 ```
 
-# Or manual install
+Or manual install
 ```bash
 pip install click rich tqdm requests pycryptodome
 ```
-#### Automatic Dependency Installation
+Automatic Dependency Installation
 The tool will automatically download required libraries to lib/:
 
 ---
@@ -277,49 +277,49 @@ python -m src.main install
 
 ## Usage
 ### Basic Commands
-#### Full pipeline (extract → analyze → convert)
+Full pipeline (extract → analyze → convert)
 ```bash
 python -m src.main process
 ```
 
-#### Extract only
+Extract only
 ```bash
 python -m src.main extract
 ```
 
-#### Analyze extracted files
+Analyze extracted files
 ```bash
 python -m src.main analyze
 ```
 
-#### Convert files to proper formats
+Convert files to proper formats
 ```bash
 python -m src.main convert --convert-media
 ```
 
-#### Check audio files
+Check audio files
 ```bash
 python -m src.main check
 ```
 
 
 ## Examples
-#### Skip conversion
+Skip conversion
 ```bash
 python -m src.main process --no-convert-media
 ```
 
-#### Parallel extraction with 4 workers
+Parallel extraction with 4 workers
 ```bash
 python -m src.main extract --workers 4
 ```
 
-#### Verbose analysis
+Verbose analysis
 ```bash
 python -m src.main analyze --verbose
 ```
 
-#### Dry-run conversion
+Dry-run conversion
 ```bash
 python -m src.main convert --convert-media --dry-run
 ```
@@ -365,14 +365,14 @@ marathon.pkg.extractor/
 |.gz, .zz|	GZip / zlib          |  Compressed data	         |
 
 ### Key Validation
-#### To validate AES-GCM keys:
+To validate AES-GCM keys:
 
 ```bash
 python -m src.main validate --auto-find-pkg
 ```
 
-### Troubleshooting
-#### Error: "Oodle DLL not found"
+## Troubleshooting
+Error: "Oodle DLL not found"
 
 Make sure oo2core_9_win64.dll is in the lib/ folder.
 
@@ -380,7 +380,7 @@ Make sure oo2core_9_win64.dll is in the lib/ folder.
 python -m src.main install
 ```
 
-#### Error: "No module named 'src'"
+Error: "No module named 'src'"
 
 Install the package in development mode:
 ``` bash
@@ -392,7 +392,7 @@ python -m src.main process
 ```
 
 
-#### Files not converting
+Files not converting
 
 Make sure required tools are installed:
 
@@ -401,7 +401,7 @@ python -m src.main --with-ffmpeg
 ```
 
 
-# License and Terms of Use
+## License and Terms of Use
 ### Code Rights
 This software is distributed for free under the MIT License.
 
