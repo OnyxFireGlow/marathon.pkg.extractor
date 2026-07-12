@@ -151,3 +151,18 @@ class FileSystemManager:
 
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def find_project_dir(self, dirname: str) -> Path | None:
+        """
+        Ищет директорию dirname относительно корня проекта.
+
+        Args:
+            dirname: Имя искомой папки (например, 'extracted', 'raw')
+
+        Returns:
+            Path к папке или None
+        """
+        candidate = self.base_dir / dirname
+        if candidate.exists() and candidate.is_dir():
+            return candidate
+        return None
