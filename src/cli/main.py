@@ -144,7 +144,6 @@ def process(workers, convert_media):
 @cli.command()
 def install():
     """Install required dependencies (Oodle, vgmstream, ffmpeg)."""
-    print_banner()
     console.print("Installing dependencies...")
     manager = DependencyManager()
     results = []

@@ -22,14 +22,14 @@ class DependencyManager:
             "size_mb": 3.5,
         },
         "oo2core": {
-            "url": "https://github.com/onyxfireglow/marathon-tool/raw/main/lib/oo2core_9_win64.dll",
+            "url": "https://github.com/Yukidaruma56/oo2core_9_win64.dll/raw/refs/heads/main/oo2core_9_win64.dll",
             "archive_name": None,
             "extract_target": "oo2core_9_win64.dll",
             "size_mb": 1.2,
         },
         "ffmpeg": {
-            "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-7.0.2-essentials_build.zip",
-            "archive_name": "ffmpeg-7.0.2-essentials_build.zip",
+            "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip",
+            "archive_name": "ffmpeg-master-latest-win64-lgpl.zip",
             "extract_target": "ffmpeg.exe",
             "size_mb": 85,
         },

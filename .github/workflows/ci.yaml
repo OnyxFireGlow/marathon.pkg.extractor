@@ -26,6 +26,8 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Install Oodle DLL
+        env:
+          PYTHONWARNINGS: ignore::RuntimeWarning
         run: |
           python -m src.cli.main install
 
