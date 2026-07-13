@@ -10,20 +10,22 @@ class FileSystemManager:
     REQUIRED_DIRS = ["raw", "extracted"]
     SUPPORTED_EXTENSIONS = (".pkg",)
 
-    def __init__(self, base_dir: str = None):
+    def __init__(self, base_dir: str = None, quiet: bool = False):
         """
         Инициализация файлового менеджера.
 
         Args:
             base_dir: Путь к корневой директории проекта.
                       Если None — определяется автоматически.
+            quiet: Не выводить информационные сообщения.
         """
         if base_dir:
             self.base_dir = Path(base_dir)
         else:
             self.base_dir = self._find_project_root()
 
-        print(f"[·] Корневая директория проекта: {self.base_dir}")
+        if not quiet:
+            print(f"[·] Корневая директория проекта: {self.base_dir}")
 
     @staticmethod
     def _find_project_root() -> Path:

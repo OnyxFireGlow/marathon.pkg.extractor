@@ -2,12 +2,13 @@
 Module for parsing and extracting data from .pkg files.
 """
 
+
 import mmap
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, BinaryIO, Dict, List, Optional, Set
 
 from Crypto.Cipher import AES
 from tqdm import tqdm
@@ -52,124 +53,16 @@ class BlockEntry:
     gcm_tag: bytes
 
 
-def _read_uint16(data: bytes | mmap.mmap, offset: int) -> int:
+def _read_uint16(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset : offset + 2], byteorder="little")
 
 
-def _read_uint32(data: bytes | mmap.mmap, offset: int) -> int:
+def _read_uint32(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset : offset + 4], byteorder="little")
 
 
-def _extract_entry_worker(
-    entry_index: int,
-    entry_name: str,
-    starting_block: int,
-    starting_block_offset: int,
-    file_size: int,
-    worker_data: dict,
-) -> Optional[bytes]:
-    """
-    Worker for parallel extraction.
-    Runs in separate process - NO OUTPUT to avoid spam.
-    """
-    import os
-
-    from Crypto.Cipher import AES
-
-    if file_size == 0:
-        return None
-
-    blocks = worker_data["blocks"]
-    patch_data = {
-        pid: bytes.fromhex(data) for pid, data in worker_data["patch_data"].items()
-    }
-    block_size = worker_data["block_size"]
-    nonce = bytes.fromhex(worker_data["nonce"])
-    aes_key_0 = bytes.fromhex(worker_data["aes_key_0"])
-    aes_key_1 = bytes.fromhex(worker_data["aes_key_1"])
-
-    # Load Oodle silently
-    oodle = None
-    dll_path = worker_data.get("oodle_dll_path")
-    if dll_path and os.path.exists(dll_path):
-        try:
-            # Use quiet=True to suppress output
-            from src.utils.oodle import OodleManager
-
-            oodle = OodleManager(dll_path, quiet=True)
-        except Exception:
-            pass
-
-    def read_block(block_index: int) -> Optional[bytes]:
-        if block_index >= len(blocks):
-            return None
-
-        block = blocks[block_index]
-
-        if block["patch_id"] not in patch_data:
-            return None
-
-        patch = patch_data[block["patch_id"]]
-
-        if block["offset"] >= len(patch):
-            return None
-
-        read_size = min(block["size"], len(patch) - block["offset"])
-        block_data = patch[block["offset"] : block["offset"] + read_size]
-
-        if block["flags"] & 0x2:
-            key = aes_key_1 if (block["flags"] & 0x4) else aes_key_0
-            gcm_tag = bytes.fromhex(block.get("gcm_tag", ""))
-
-            if len(gcm_tag) == 16 and gcm_tag != b"\x00" * 16:
-                try:
-                    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
-                    block_data = cipher.decrypt_and_verify(block_data, gcm_tag)
-                except ValueError:
-                    return None
-            else:
-                cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
-                block_data = cipher.decrypt(block_data)
-
-        if block["flags"] & 0x1 and oodle:
-            try:
-                block_data = oodle.decompress(block_data, output_size=block_size)
-            except RuntimeError:
-                return None
-
-        return block_data
-
-    file_buffer = bytearray()
-    current_offset = 0
-    current_block = starting_block
-
-    while current_offset < file_size:
-        block_data = read_block(current_block)
-        if block_data is None:
-            return None
-
-        remaining_bytes = file_size - current_offset
-
-        if current_block == starting_block:
-            block_start = starting_block_offset
-            block_remaining = len(block_data) - block_start
-            copy_size = min(block_remaining, remaining_bytes)
-            file_buffer.extend(block_data[block_start : block_start + copy_size])
-            current_offset += copy_size
-        elif remaining_bytes < len(block_data):
-            file_buffer.extend(block_data[:remaining_bytes])
-            current_offset += remaining_bytes
-        else:
-            file_buffer.extend(block_data)
-            current_offset += len(block_data)
-
-        current_block += 1
-
-    return bytes(file_buffer)
-
-
 class TigerPackage:
-    """Парсер и экстрактор для .pkg файлов Tiger Engine."""
+    """Parser and extractor for Tiger Engine .pkg files."""
 
     AES_KEY_0 = AES_KEYS["KEY_0"]
     AES_KEY_1 = AES_KEYS["KEY_1"]
@@ -196,16 +89,36 @@ class TigerPackage:
         self.blocks: List[BlockEntry] = []
         self.package_id_str: str = ""
 
+        self._file: Optional[BinaryIO] = None
         self._main_data: Optional[mmap.mmap] = None
         self._patch_data: Dict[int, bytes] = {}
         self._patch_ids: List[int] = []
         self._nonce: Optional[bytes] = None
+        self._block_cache: Dict[int, bytes] = {}
 
         self.oodle = oodle_manager or OodleManager(quiet=True)
         self._detect_package_id()
 
+    def __enter__(self):
+        self.load()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
+    def close(self):
+        for key in list(self._patch_data.keys()):
+            if isinstance(self._patch_data[key], mmap.mmap):
+                self._patch_data[key].close()
+        if self._main_data is not None:
+            self._main_data.close()
+            self._main_data = None
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+
     def _detect_package_id(self):
-        """Определяет Package ID из имени файла."""
         name = self.base_name
         parts = name.split("_")
 
@@ -221,19 +134,21 @@ class TigerPackage:
         self.logger.debug(f"Package ID string: {self.package_id_str}")
 
     def load(self) -> bool:
-        """Загружает пакет с использованием memory-mapped файла."""
+        """Loads the package using a memory-mapped file."""
         self.logger.info(f"Loading: {self.filename}")
 
         try:
-            with open(self.filepath, "rb") as f:
-                with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                    self._main_data = mm
-                    self._parse_header()
-                    self._find_patches()
-                    self._load_patches()
-                    self._parse_entry_table()
-                    self._parse_block_table()
-                    self._generate_nonce()
+            self._file = open(self.filepath, "rb")
+            self._main_data = mmap.mmap(
+                self._file.fileno(), 0, access=mmap.ACCESS_READ
+            )
+
+            self._parse_header()
+            self._find_patches()
+            self._load_patches()
+            self._parse_entry_table()
+            self._parse_block_table()
+            self._generate_nonce()
 
             self.logger.info(
                 f"Loaded: {len(self.entries)} entries, {len(self.blocks)} blocks"
@@ -242,10 +157,10 @@ class TigerPackage:
 
         except Exception as e:
             self.logger.error(f"Load error: {e}")
+            self.close()
             return False
 
     def _parse_header(self):
-        """Парсинг заголовка пакета."""
         data = self._main_data
 
         self.header = {
@@ -267,7 +182,6 @@ class TigerPackage:
             self.logger.debug(f"Block table: {self.header['block_table_size']} blocks")
 
     def _find_patches(self):
-        """Находит все патчи для этого пакета."""
         search_dir = self.filepath.parent
         self._patch_ids = []
 
@@ -287,12 +201,11 @@ class TigerPackage:
         return self.filepath.parent / f"{self.base_name[:-2]}_{patch_id}.pkg"
 
     def _load_patches(self):
-        """Загружает данные патчей."""
         self._patch_data = {}
 
         for patch_id in self._patch_ids:
             if patch_id == self.header["patch_id"]:
-                self._patch_data[patch_id] = bytes(self._main_data)
+                self._patch_data[patch_id] = self._main_data
             else:
                 patch_path = self._get_patch_path(patch_id)
                 if patch_path.exists():
@@ -303,7 +216,6 @@ class TigerPackage:
         self.logger.info(f"Loaded {len(self._patch_data)} patches")
 
     def _parse_entry_table(self):
-        """Парсинг таблицы записей."""
         self.entries = []
         data = self._main_data
         offset = self.header["entry_table_offset"]
@@ -358,7 +270,6 @@ class TigerPackage:
         self.logger.debug(f"Parsed {len(self.entries)} entries")
 
     def _parse_block_table(self):
-        """Парсинг таблицы блоков."""
         self.blocks = []
         data = self._main_data
         offset = self.header["block_table_offset"]
@@ -393,7 +304,6 @@ class TigerPackage:
         self.logger.debug(f"Loaded {len(self.blocks)} blocks")
 
     def _generate_nonce(self):
-        """Генерирует nonce для AES-GCM."""
         nonce = bytearray(
             [0x84, 0xDF, 0x11, 0xC0, 0xAC, 0xAB, 0xFA, 0x20, 0x33, 0x11, 0x26, 0x99]
         )
@@ -405,8 +315,13 @@ class TigerPackage:
 
         self._nonce = bytes(nonce)
 
+        self._cipher_key0 = AES.new(self.AES_KEY_0, AES.MODE_GCM, nonce=self._nonce)
+        self._cipher_key1 = AES.new(self.AES_KEY_1, AES.MODE_GCM, nonce=self._nonce)
+
     def _read_block(self, block_index: int) -> Optional[bytes]:
-        """Читает и обрабатывает один блок."""
+        if block_index in self._block_cache:
+            return self._block_cache[block_index]
+
         if block_index >= len(self.blocks):
             return None
 
@@ -425,20 +340,18 @@ class TigerPackage:
 
         if block.flags & BlockFlags.ENCRYPTED:
             key = (
-                self.AES_KEY_1
+                self._cipher_key1
                 if (block.flags & BlockFlags.USE_KEY_1)
-                else self.AES_KEY_0
+                else self._cipher_key0
             )
 
             if len(block.gcm_tag) == 16 and block.gcm_tag != b"\x00" * 16:
                 try:
-                    cipher = AES.new(key, AES.MODE_GCM, nonce=self._nonce)
-                    block_data = cipher.decrypt_and_verify(block_data, block.gcm_tag)
-                except ValueError:
+                    block_data = key.decrypt_and_verify(block_data, block.gcm_tag)
+                except (ValueError, KeyError):
                     return None
             else:
-                cipher = AES.new(key, AES.MODE_GCM, nonce=self._nonce)
-                block_data = cipher.decrypt(block_data)
+                block_data = key.decrypt(block_data)
 
         if block.flags & BlockFlags.COMPRESSED:
             if not self.oodle or not self.oodle.is_loaded:
@@ -448,10 +361,10 @@ class TigerPackage:
             except RuntimeError:
                 return None
 
+        self._block_cache[block_index] = block_data
         return block_data
 
     def extract_entry(self, entry: FileEntry) -> Optional[bytes]:
-        """Извлекает данные конкретной записи."""
         if entry.file_size == 0:
             return None
 
@@ -483,16 +396,12 @@ class TigerPackage:
 
         return bytes(file_buffer)
 
-    def get_entries_by_type(self, type_filter: Optional[int] = None) -> List[FileEntry]:
-        if type_filter is None:
-            return self.entries
-        return [e for e in self.entries if e.file_type == type_filter]
-
-    def extract_all(self, type_filter: Optional[int] = None) -> Dict[str, bytes]:
-        """Извлекает все файлы последовательно."""
-        entries = self.get_entries_by_type(type_filter)
+    def extract_all(self, output_dir: Path) -> Dict[str, bytes]:
+        """Extract all files sequentially, writing directly to disk."""
         results = {}
-        total = len(entries)
+        total = len(self.entries)
+
+        output_dir.mkdir(parents=True, exist_ok=True)
 
         with tqdm(
             total=total,
@@ -500,7 +409,28 @@ class TigerPackage:
             unit="files",
             bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
         ) as pbar:
-            for entry in entries:
+            for entry in self.entries:
+                data = self.extract_entry(entry)
+                if data is not None:
+                    file_path = output_dir / f"{entry.name}.bin"
+                    file_path.write_bytes(data)
+                    results[entry.name] = data
+                pbar.update(1)
+
+        return results
+
+    def extract_all_sequential(self) -> Dict[str, bytes]:
+        """Extract all files sequentially, keeping results in memory."""
+        results = {}
+        total = len(self.entries)
+
+        with tqdm(
+            total=total,
+            desc="Extracting",
+            unit="files",
+            bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
+        ) as pbar:
+            for entry in self.entries:
                 data = self.extract_entry(entry)
                 if data is not None:
                     results[entry.name] = data
@@ -508,82 +438,59 @@ class TigerPackage:
 
         return results
 
+    def _predict_blocks_needed(self) -> int:
+        """Estimate how many unique blocks will be needed for all entries."""
+        needed: Set[int] = set()
+        for entry in self.entries:
+            if entry.file_size == 0:
+                continue
+            current_block = entry.starting_block
+            current_offset = 0
+            while current_offset < entry.file_size:
+                needed.add(current_block)
+                current_offset += BLOCK_SIZE
+                current_block += 1
+        return len(needed)
+
     def extract_all_parallel(
         self,
-        type_filter: Optional[int] = None,
+        output_dir: Path,
         max_workers: Optional[int] = None,
     ) -> Dict[str, bytes]:
-        """Extracts all files in parallel."""
-        entries = self.get_entries_by_type(type_filter)
-
+        """Extract all files in parallel using ThreadPoolExecutor."""
         if max_workers is None:
             max_workers = min(cpu_count(), self.max_workers)
 
         self.logger.info(
-            f"Parallel extraction: {max_workers} workers, {len(entries)} entries"
+            f"Parallel extraction: {max_workers} workers, {len(self.entries)} entries"
         )
 
-        worker_data = {
-            "blocks": [
-                {
-                    "offset": b.offset,
-                    "size": b.size,
-                    "patch_id": b.patch_id,
-                    "flags": b.flags,
-                    "gcm_tag": b.gcm_tag.hex(),
-                }
-                for b in self.blocks
-            ],
-            "patch_data": {pid: data.hex() for pid, data in self._patch_data.items()},
-            "block_size": BLOCK_SIZE,
-            "nonce": self._nonce.hex(),
-            "aes_key_0": self.AES_KEY_0.hex(),
-            "aes_key_1": self.AES_KEY_1.hex(),
-            "oodle_dll_path": str(self.oodle.dll_path)
-            if self.oodle and self.oodle.dll_path
-            else None,
-        }
+        output_dir.mkdir(parents=True, exist_ok=True)
+        results: Dict[str, bytes] = {}
 
-        results = {}
-        batch_size = DEFAULT_CONFIG["batch_size"]
-        futures = {}
-
-        # Single progress bar for all workers
         with tqdm(
-            total=len(entries),
+            total=len(self.entries),
             desc="Extracting (parallel)",
             unit="files",
             bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]",
-            position=0,
-            leave=True,
         ) as pbar:
-            with ProcessPoolExecutor(max_workers=max_workers) as executor:
-                for i in range(0, len(entries), batch_size):
-                    batch = entries[i : i + batch_size]
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self.extract_entry, entry): entry
+                    for entry in self.entries
+                }
 
-                    for entry in batch:
-                        future = executor.submit(
-                            _extract_entry_worker,
-                            entry_index=entry.index,
-                            entry_name=entry.name,
-                            starting_block=entry.starting_block,
-                            starting_block_offset=entry.starting_block_offset,
-                            file_size=entry.file_size,
-                            worker_data=worker_data,
-                        )
-                        futures[future] = entry.name
-
-                    for future in as_completed(futures):
-                        name = futures[future]
-                        try:
-                            data = future.result(timeout=120)
-                            if data is not None:
-                                results[name] = data
-                        except Exception as e:
-                            self.logger.warning(f"Failed to extract {name}: {e}")
-                        pbar.update(1)
-
-                    futures.clear()
+                for future in as_completed(futures):
+                    entry = futures[future]
+                    try:
+                        data = future.result(timeout=120)
+                        if data is not None:
+                            file_path = output_dir / f"{entry.name}.bin"
+                            file_path.write_bytes(data)
+                            results[entry.name] = data
+                    except Exception as e:
+                        self.logger.warning(f"Failed to extract {entry.name}: {e}")
+                    pbar.update(1)
 
         self.logger.info(f"Extracted {len(results)} files")
         return results

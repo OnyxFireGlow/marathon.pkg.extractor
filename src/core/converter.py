@@ -1,7 +1,7 @@
 """
 Утилита конвертации извлечённых .bin файлов в правильные форматы.
 Поддерживает: WEM → WAV (vgmstream), USM → MP4 (ffmpeg),
-             и переименование по сигнатурам.
+              и переименование по сигнатурам.
 """
 
 import shutil
@@ -15,44 +15,11 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.prompt import Confirm
 from rich.table import Table
 
+from src.core.signatures import SIGNATURES
+
 console = Console()
 
-BANNER = """[bold cyan]
-╔══════════════════════════════════════════════════╗
-║     Marathon 2026 - Format Converter            ║
-╚══════════════════════════════════════════════════╝[/bold cyan]"""
-
-SIGNATURE_TO_EXT = {
-    # Аудио
-    b"RIFF": ".wem",
-    b"OggS": ".ogg",
-    b"ftyp": ".mp4",
-    b"\xff\xfb": ".mp3",
-    b"\xff\xf3": ".mp3",
-    b"\xff\xf2": ".mp3",
-    b"ID3": ".mp3",
-    b"BKHD": ".bnk",
-    b"AKBK": ".bnk",
-    # Видео
-    b"CRID": ".usm",
-    b"matroska": ".mkv",
-    b"\x00\x00\x01\xba": ".mpg",
-    b"\x00\x00\x01\xb3": ".mpg",
-    b"\x1aE\xdf\xa3": ".webm",
-    b"MOOV": ".mov",
-    b"moov": ".mov",
-    # Сжатие
-    b"\x1f\x8b": ".gz",
-    b"BZh": ".bz2",
-    b"\x78\x9c": ".zz",
-    # Текстуры
-    b"DDS ": ".dds",
-    b"\x89PNG": ".png",
-    # Bungie
-    b"\x07\x00\x00\x00": ".pkg",
-    b"\x09\x00\x00\x00": ".pkg",
-    b"\x0a\x00\x00\x00": ".pkg",
-}
+SIGNATURE_TO_EXT = {sig: ext for sig, (_, ext) in SIGNATURES.items()}
 
 # ============================================================
 #  Правила конвертации через внешние утилиты
@@ -159,11 +126,11 @@ def _convert_with_tool(source_path: Path, dest_path: Path, ext: str) -> bool:
 
     except subprocess.TimeoutExpired:
         console.print(
-            f"[yellow]  Таймаут ({rule.get('timeout')}с): {source_path.name}[/yellow]"
+            f"[yellow]  timeout ({rule.get('timeout')}s): {source_path.name}[/yellow]"
         )
         return False
     except Exception as e:
-        console.print(f"[red]  Ошибка: {e}[/red]")
+        console.print(f"[red]  error: {e}[/red]")
         return False
 
 
@@ -228,16 +195,19 @@ def convert_directory(
     input_dir = Path(input_dir)
 
     if not input_dir.exists():
-        console.print(f"[red]Директория не найдена: {input_dir}[/red]")
+        console.print(f"[red]directory not found: {input_dir}[/red]")
         return {}
 
     bin_files = find_bin_files(input_dir, recursive)
 
     if not bin_files:
-        console.print(f"[yellow].bin файлы не найдены в {input_dir}[/yellow]")
+        console.print(f"[yellow].bin files not found in {input_dir}[/yellow]")
         return {}
 
-    console.print(f"\n[bold]📁 {input_dir.name}[/bold] — {len(bin_files):,} файлов")
+    console.print()
+    console.print(f"[dim]{'='*60}[/dim]")
+    console.print(f"[bold]{input_dir.name}[/bold] — {len(bin_files):,} files")
+    console.print(f"[dim]{'='*60}[/dim]")
 
     # Группируем по форматам
     format_groups = defaultdict(list)
@@ -257,8 +227,8 @@ def convert_directory(
         return {"planned": dict(format_groups), "unknown": unknown}
 
     # Подтверждение
-    if interactive and not Confirm.ask("\nПродолжить?", default=True):
-        console.print("[dim]Отменено[/dim]")
+    if interactive and not Confirm.ask("\nProceed?", default=True):
+        console.print("[dim]cancelled[/dim]")
         return {}
 
     # Проверка доступности инструментов
@@ -271,9 +241,9 @@ def convert_directory(
                     path = _find_tool(tool)
                     available_tools[tool] = path is not None
                     if path:
-                        console.print(f"[green]✓[/green] {tool}: {path}")
+                        console.print(f"[green]+[/green] {tool}: {path}")
                     else:
-                        console.print(f"[yellow]✗[/yellow] {tool}: не найден")
+                        console.print(f"[yellow]-[/yellow] {tool}: not found")
 
     # Конвертация
     stats = {
@@ -292,12 +262,12 @@ def convert_directory(
         BarColumn(),
         console=console,
     ) as progress:
-        task = progress.add_task("[cyan]Конвертация", total=total)
+        task = progress.add_task("converting", total=total)
 
         for ext, files in sorted(
             format_groups.items(), key=lambda x: len(x[1]), reverse=True
         ):
-            progress.update(task, description=f"[cyan]{ext}")
+            progress.update(task, description=ext)
 
             for filepath in files:
                 new_path = _rename_file(filepath, ext, output_dir, stats)
@@ -343,7 +313,7 @@ def _rename_file(
         return new_path
 
     except Exception as e:
-        console.print(f"[red]Ошибка: {filepath.name}: {e}[/red]")
+        console.print(f"[red]error: {filepath.name}: {e}[/red]")
         stats["skipped"] += 1
         return None
 
@@ -365,13 +335,13 @@ def convert_all_extracted(
     """
     from src.utils.filesystem import FileSystemManager
 
-    fs = FileSystemManager()
+    fs = FileSystemManager(quiet=True)
     extracted_path = fs.find_project_dir(extracted_dir)
 
     if not extracted_path:
         extracted_path = Path(extracted_dir)
         if not extracted_path.exists():
-            console.print(f"[red]Папка '{extracted_dir}' не найдена[/red]")
+            console.print(f"[red]folder '{extracted_dir}' not found[/red]")
             return None
 
     # Выходная папка по умолчанию: extracted/converted
@@ -382,8 +352,8 @@ def convert_all_extracted(
 
     output_path.mkdir(parents=True, exist_ok=True)
 
-    console.print(f"[dim]Входная папка: {extracted_path}[/dim]")
-    console.print(f"[dim]Выходная папка: {output_path}[/dim]")
+    console.print(f"[dim]input:  {extracted_path}[/dim]")
+    console.print(f"[dim]output: {output_path}[/dim]")
 
     # Конвертируем каждую подпапку
     for subdir in sorted(extracted_path.iterdir()):
@@ -409,82 +379,56 @@ def convert_all_extracted(
 def _print_plan(format_groups: dict, unknown: list, convert_media: bool, dry_run: bool):
     """Выводит план конвертации."""
 
-    table = Table(title="📋 План конвертации")
-    table.add_column("Формат", style="cyan")
-    table.add_column("Файлов", style="green", justify="right")
-    table.add_column("Действие", style="yellow")
+    table = Table(border_style="white", header_style="bold white")
+    table.add_column("TYPE", style="white")
+    table.add_column("COUNT", style="white", justify="right")
+    table.add_column("ACTION", style="dim white")
 
     for ext, files in sorted(
         format_groups.items(), key=lambda x: len(x[1]), reverse=True
     ):
-        action = f"Переименовать в *{ext}"
+        action = f"rename to *{ext}"
         if convert_media and ext in CONVERSION_RULES:
             rule = CONVERSION_RULES[ext]
-            action += f" → {rule['to']} ({rule['tool']})"
+            action += f" -> {rule['to']} ({rule['tool']})"
         table.add_row(ext, str(len(files)), action)
 
     if unknown:
         table.add_row(
-            "[red]Неизвестный[/red]", str(len(unknown)), "[red]Пропущено[/red]"
+            "[red]UNKNOWN[/red]", str(len(unknown)), "[red]skipped[/red]"
         )
 
     console.print(table)
 
     if dry_run:
-        console.print("\n[yellow]Режим просмотра — файлы не будут изменены[/yellow]")
+        console.print("  [yellow]dry run — no files will be modified[/yellow]")
 
     if convert_media:
-        console.print("\n[dim]Будет выполнена конвертация:[/dim]")
         for ext, rule in CONVERSION_RULES.items():
             if ext in format_groups:
                 console.print(
-                    f"  [dim]• {rule['description']} (через {rule['tool']})[/dim]"
+                    f"  [dim]- {rule['description']} via {rule['tool']}[/dim]"
                 )
 
 
 def _print_results(stats: dict):
     """Выводит результаты конвертации."""
 
-    table = Table(title="✅ Результаты")
-    table.add_column("Действие", style="cyan")
-    table.add_column("Количество", style="green", justify="right")
+    table = Table(border_style="white", header_style="bold white")
+    table.add_column("ACTION", style="white")
+    table.add_column("COUNT", style="white", justify="right")
 
-    table.add_row("Переименовано", str(stats["renamed"]))
-    table.add_row("Конвертировано", str(stats["converted"]))
-    table.add_row("Пропущено (ошибки)", str(stats["skipped"]))
-    table.add_row("Неизвестных (пропущено)", str(stats["unknown"]))
+    table.add_row("renamed", str(stats["renamed"]))
+    table.add_row("converted", str(stats["converted"]))
+    table.add_row("errors (skipped)", str(stats["skipped"]))
+    table.add_row("unknown (skipped)", str(stats["unknown"]))
 
     total = stats["renamed"] + stats["converted"]
-    table.add_row("[bold]Всего обработано[/bold]", f"[bold]{total}[/bold]")
+    table.add_row("total processed", f"[bold]{total}[/bold]")
 
     console.print(table)
 
 
-def print_banner():
-    """Выводит баннер конвертера."""
-    console.print(BANNER)
-
-
-# ============================================================
-#  Самостоятельный запуск
 # ============================================================
 
-if __name__ == "__main__":
-    import sys
 
-    print_banner()
-
-    dry_run = "--dry-run" in sys.argv
-    convert_media = "--convert-media" in sys.argv or "--convert-audio" in sys.argv
-
-    target = "extracted"
-    output = None
-
-    args = sys.argv[1:]
-    for i, arg in enumerate(args):
-        if arg == "-o" and i + 1 < len(args):
-            output = args[i + 1]
-        elif not arg.startswith("-"):
-            target = arg
-
-    convert_all_extracted(target, output, convert_media=convert_media, dry_run=dry_run)

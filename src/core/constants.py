@@ -35,14 +35,6 @@ class BlockFlags:
     USE_KEY_1 = 0x4
 
 
-# ===== Типы файлов =====
-class FileType:
-    AUDIO = 4
-    VIDEO = 3
-    TEXTURE = 1
-    MODEL = 2
-
-
 # ===== AES-ключи (подтверждены для Marathon 2026) =====
 AES_KEYS = {
     "KEY_0": bytes.fromhex("D62AB2C10CC01BC535DB7B8655C7DC3B"),
@@ -60,12 +52,4 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "batch_size": 100,  # Для параллельной обработки
 }
 
-# ===== Категории пакетов =====
-PACKAGE_CATEGORIES = {
-    "audio": ["audio"],
-    "video": ["video"],
-    "ui": ["ui_"],
-    "environments": ["environments", "outpost", "perimeter", "marsh"],
-    "gear": ["gear"],
-    "sandbox": ["sandbox"],
-}
+

@@ -1,5 +1,5 @@
 """
-Wrapper for Oodle compression library.
+Oodle library manager for Marathon 2026 Package Extractor.
 """
 
 import os
@@ -40,7 +40,13 @@ class OodleManager:
         if dll_path and os.path.exists(dll_path):
             self._load_dll(dll_path)
         else:
-            self._auto_find_dll()
+            try:
+                self._auto_find_dll()
+            except FileNotFoundError:
+                if quiet:
+                    pass
+                else:
+                    raise
 
     def _auto_find_dll(self):
         """Auto-search for Oodle DLL in known locations."""

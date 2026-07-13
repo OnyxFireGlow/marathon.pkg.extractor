@@ -1,11 +1,8 @@
-"""
-Единый модуль для определения форматов файлов.
-"""
-
-from typing import Dict, Tuple
+# src/core/signatures.py
+"""Unified file signature detection for all formats."""
 
 # Сигнатуры: {байтовая_сигнатура: (название, расширение)}
-SIGNATURES: Dict[bytes, Tuple[str, str]] = {
+SIGNATURES = {
     # Аудио
     b"RIFF": ("WAV/WEM (WWise Audio)", ".wem"),
     b"OggS": ("Ogg Vorbis", ".ogg"),
@@ -43,9 +40,12 @@ SIGNATURES: Dict[bytes, Tuple[str, str]] = {
 }
 
 
-def detect_format(header: bytes) -> Tuple[str, str]:
+def detect_format(header: bytes) -> tuple[str, str]:
     """
     Определяет формат по заголовку.
+
+    Args:
+        header: Первые байты файла (минимум 4 байта)
 
     Returns:
         (название_формата, расширение)
@@ -68,6 +68,6 @@ def is_known_format(header: bytes) -> bool:
     return not detect_format(header)[0].startswith("Неизвестный")
 
 
-def get_known_formats() -> Dict[str, str]:
+def get_known_formats() -> dict[str, str]:
     """Возвращает словарь {расширение: название}."""
     return {ext: name for _, (name, ext) in SIGNATURES.items()}
