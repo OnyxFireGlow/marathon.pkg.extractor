@@ -54,14 +54,20 @@ jobs:
           curl -L -o lib/oo2core_9_win64.dll "https://github.com/Yukidaruma56/oo2core_9_win64.dll/raw/refs/heads/main/oo2core_9_win64.dll"
 
       - name: Download vgmstream
+        shell: pwsh
         run: |
-          curl -L -o vgmstream.zip "https://github.com/vgmstream/vgmstream/releases/latest/download/vgmstream-win64.zip"
-          tar -xf vgmstream.zip -C lib/ --wildcards "*/vgmstream-cli.exe" --strip-components 1
+          Invoke-WebRequest -Uri "https://github.com/vgmstream/vgmstream/releases/latest/download/vgmstream-win64.zip" -OutFile vgmstream.zip
+          Expand-Archive vgmstream.zip -DestinationPath lib_temp -Force
+          Get-ChildItem -Path lib_temp -Recurse -Filter "vgmstream-cli.exe" | Move-Item -Destination "lib\vgmstream-cli.exe"
+          Remove-Item -Recurse -Force lib_temp, vgmstream.zip
 
       - name: Download ffmpeg
+        shell: pwsh
         run: |
-          curl -L -o ffmpeg.zip "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip"
-          tar -xf ffmpeg.zip -C lib/ --wildcards "*/bin/ffmpeg.exe" --strip-components 2
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath lib_temp -Force
+          Get-ChildItem -Path lib_temp -Recurse -Filter "ffmpeg.exe" | Move-Item -Destination "lib\ffmpeg.exe"
+          Remove-Item -Recurse -Force lib_temp, ffmpeg.zip
 
       - name: Create portable archive
         run: |
